@@ -1,0 +1,19 @@
+## .NET build artifacts
+bin/
+obj/
+out/
+
+## User-specific files
+*.user
+*.suo
+
+## Visual Studio / Rider
+.vs/
+.idea/
+
+## Logs
+*.log
+
+## OS files
+.DS_Store
+Thumbs.db
