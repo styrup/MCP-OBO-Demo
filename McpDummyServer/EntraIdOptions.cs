@@ -56,13 +56,54 @@ public class EntraIdOptions
     public string? CustomApiBaseUrl { get; set; }
 
     /// <summary>Expected audience of the access token: the Application ID URI (e.g.
-    /// "api://{server-app-client-id}") or client ID of the app registration
-    /// that represents this MCP server ("Expose an API").
+    /// "api://{server-app-client-id}") used as the prefix for the MCP scope.
     /// </summary>
     public string? Audience { get; set; }
 
-    /// <summary>Scope clients must request/hold to call the MCP tools, e.g. "mcp.tools".</summary>
+    /// <summary>
+    /// Expected <c>aud</c> claim in access tokens. Entra ID v2 access tokens use
+    /// the API app registration's client ID (GUID), not its Application ID URI.
+    /// For the standard <c>api://{client-id}</c> URI this is derived automatically.
+    /// Set this explicitly when using a custom Application ID URI.
+    /// </summary>
+    public string? TokenAudience { get; set; }
+
+    /// <summary>Scope name clients must request to call the MCP tools, e.g. "mcp.tools".</summary>
     public string Scope { get; set; } = "mcp.tools";
+
+    /// <summary>
+    /// Fully qualified delegated scope published in OAuth Protected Resource
+    /// Metadata, e.g. "api://{server-app-client-id}/mcp.tools".
+    /// </summary>
+    public string McpScope => string.IsNullOrWhiteSpace(Audience)
+        ? Scope
+        : $"{Audience.TrimEnd('/')}/{Scope.TrimStart('/')}";
+
+    /// <summary>The audience accepted by JWT validation.</summary>
+    public string? ValidTokenAudience
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(TokenAudience))
+            {
+                return TokenAudience;
+            }
+
+            if (!string.IsNullOrWhiteSpace(ClientId))
+            {
+                return ClientId;
+            }
+
+            const string apiScheme = "api://";
+            if (Audience?.StartsWith(apiScheme, StringComparison.OrdinalIgnoreCase) == true
+                && Guid.TryParse(Audience[apiScheme.Length..], out var appId))
+            {
+                return appId.ToString();
+            }
+
+            return Audience;
+        }
+    }
 
     /// <summary>True once both TenantId and Audience have been provided.</summary>
     public bool IsConfigured => !string.IsNullOrWhiteSpace(TenantId) && !string.IsNullOrWhiteSpace(Audience);

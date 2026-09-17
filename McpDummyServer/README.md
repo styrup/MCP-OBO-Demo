@@ -52,7 +52,7 @@ Program.cs          -> Host + DI-opsætning. Registrerer MCP-serveren og
                         I HTTP-mode konfigureres desuden Entra ID OAuth-
                         beskyttelse hvis EntraId:TenantId/Audience er sat.
 EntraIdOptions.cs    -> Konfigurationsklasse for Entra ID-beskyttelsen
-                        (TenantId, Audience, Scope) og for On-Behalf-Of-kald
+                        (TenantId, Audience, TokenAudience, Scope) og for On-Behalf-Of-kald
                         til downstream-services (ClientId, ClientSecret,
                         DownstreamScope til Graph, CustomApiScope/
                         CustomApiBaseUrl til jeres egen service). Bundet fra
@@ -139,8 +139,10 @@ serveren:
   OIDC-discovery-dokument (`{authority}/.well-known/openid-configuration`),
   som JWT-valideringen bruger automatisk til at hente signing keys m.m.
 - **RFC 8707 – Resource Indicators**: access token skal have `aud` (audience)
-  der matcher denne servers App ID URI - forhindrer at et token udstedt til
-  en anden API kan genbruges her.
+  der matcher denne servers app-registration. I et v2 access token er `aud`
+  API-appens Application (client) ID (GUID), mens Application ID URI'en bruges
+  som scope-prefix - forhindrer at et token udstedt til en anden API kan
+  genbruges her.
 - Dynamic Client Registration (RFC 7591) understøttes **ikke** af Entra ID -
   klient-appen skal derfor forhåndsregistreres (se trin 2 nedenfor).
 
@@ -166,6 +168,14 @@ Så snart `EntraId:TenantId` og `EntraId:Audience` er sat, kræver
    - Klik **Add a scope**: Scope name `mcp.tools`, Who can consent
      `Admins and users`, giv en kort admin/user consent-beskrivelse (fx
      "Allow calling MCP tools on this server"). Gem.
+   - Det fulde scope er `api://<server-client-id>/mcp.tools` (eller
+     `<din-Application-ID-URI>/mcp.tools`). Det er denne værdi en klient skal
+     anmode om; `mcp.tools` alene er kun scope-navnet.
+   - Åbn **Manifest**, og sæt `requestedAccessTokenVersion` til `2`. Serveren
+     validerer v2 access tokens med issuer
+     `https://login.microsoftonline.com/<tenant-id>/v2.0`; uden indstillingen
+     kan Entra udstede et v1 token med issuer
+     `https://sts.windows.net/<tenant-id>/`, som serveren med rette afviser.
 
 **Trin 2 - Registrér en app for MCP-klienten (fx VS Code, Claude Desktop,
 eller dit eget testscript)**
@@ -174,6 +184,13 @@ eller dit eget testscript)**
    `McpDummyServer Client`. Vælg passende redirect URI-type (fx "Public
    client/native" med `http://localhost` for CLI/desktop-flows, eller "Web"
    hvis klienten er en webapp).
+  Når app'en skal bruges af VS Code på Windows, gå efter oprettelsen til
+  **Authentication** → **Add a platform** → **Mobile and desktop
+  applications**, og tilføj også denne custom redirect URI (med klient-app'ens
+  eget Application (client) ID):
+  `ms-appx-web://Microsoft.AAD.BrokerPlugin/<client-app-id>`. Sæt desuden
+  **Allow public client flows** til **Yes**. VS Code bruger Windows Web
+  Account Manager (WAM) til login og sender denne URI i authorization requestet.
 2. Under **API permissions** → **Add a permission** → **My APIs** → vælg
    `McpDummyServer` → marker `mcp.tools`-scopet → **Add permissions**.
 3. Hvis scopet kræver admin consent, klik **Grant admin consent**.
@@ -192,6 +209,19 @@ Sæt `EntraId:TenantId` og `EntraId:Audience` (App ID URI fra trin 1), enten i
 dotnet user-secrets init
 dotnet user-secrets set "EntraId:TenantId" "<din-tenant-id>"
 dotnet user-secrets set "EntraId:Audience" "api://<server-client-id>"
+```
+
+Lad `EntraId:Scope` være `mcp.tools`. Serveren kombinerer automatisk den med
+`EntraId:Audience` og annoncerer dermed
+`api://<server-client-id>/mcp.tools` til MCP-klienten.
+
+Entra ID v2-tokenets `aud` claim er selve `<server-client-id>`-GUID'en, ikke
+`api://`-URI'en. Serveren udleder automatisk GUID'en, når `Audience` bruger
+standardformatet `api://<server-client-id>`. Bruger du en custom Application
+ID URI, skal den forventede token-audience sættes eksplicit:
+
+```powershell
+dotnet user-secrets set "EntraId:TokenAudience" "<server-client-id>"
 ```
 
 Eller via miljøvariabler (nyttigt i containere/CI):
@@ -273,7 +303,7 @@ uoverensstemmelser.
       "type": "http",
       "url": "http://localhost:5000/mcp",
       "oauth": {
-        "clientId": "aebc6443-996d-45c2-90f0-388ff96faa56"
+        "clientId": "<din-client-app-id>"
       }
     }
   }
@@ -284,6 +314,11 @@ Du kan også oprette den via Command Palette (`Ctrl+Shift+P`) →
 **MCP: Add Server** → vælg "HTTP" → indsæt URL'en, og tilføj bagefter
 `oauth`-objektet manuelt i den genererede fil (feltet understøttes ikke i den
 guidede flow, men læses fint fra filen).
+
+Bruger du en separat klient-app, skal `<din-client-app-id>` være dens
+**Application (client) ID**, og den skal under **API permissions** have den
+delegerede tilladelse `mcp.tools` til `McpDummyServer`. Ved login anmoder VS
+Code derefter om det fulde scope `api://<server-client-id>/mcp.tools`.
 
 **Trin 3 - Start og godkend serveren i VS Code**
 
@@ -321,6 +356,11 @@ kodeændring.
   consent" sat til kun Admins. Sæt det til "Admins and users" (se "Trin 1" i
   Entra ID-afsnittet), eller bed en admin om at give consent for hele
   tenanten.
+- **"AADSTS650053 ... scope 'mcp.tools' ... resource
+  '00000003-0000-0000-c000-000000000000'"** - serveren annoncerer et kort
+  scope-navn i stedet for API'ets fulde scope. Opdatér til denne version, og
+  kontrollér at `EntraId:Audience` er API'ets Application ID URI. Nulstil
+  derefter VS Code's cache med **MCP: Reset Cached Tools** og forbind igen.
 - **Login-loop / forkert tenant** - hvis du er logget ind med en anden
   Microsoft-konto i browseren end den, der hører til din test-tenant, kan
   login fejle stille. Prøv en inprivate/incognito-browser-session ved første
@@ -329,6 +369,17 @@ kodeændring.
   `EntraId:Audience` i `appsettings.json` er præcis App ID URI'en fra "Expose
   an API" (inkl. `api://`-præfiks), og at `Mcp:ServerUrl` matcher den URL VS
   Code rent faktisk forbinder til.
+- **"IDX10214: Audience validation failed"** - se den nye fejltekst i
+  serverloggen; den viser tokenets modtagne `aud` og serverens forventede
+  værdi. For v2-tokens skal den forventede værdi være MCP API-appens
+  Application (client) ID (GUID). Med `Audience=api://<client-id>` udledes
+  den automatisk; ved en custom Application ID URI sættes
+  `EntraId:TokenAudience` til client-ID'et.
+- **"IDX10205: Issuer validation failed" med
+  `https://sts.windows.net/<tenant-id>/`** - MCP-serverens app registration
+  udsteder v1 access tokens. Åbn dens **Manifest**, sæt
+  `requestedAccessTokenVersion` til `2`, gem, og log ind igen. Indstillingen
+  skal sættes på MCP-serverens resource/API-app, ikke på client-app'en.
 - **Ændret tools-liste vises ikke** - kør **MCP: Reset Cached Tools**.
 - Server-siden logger altid til stderr ved auth-fejl/succes
   (`Entra ID token validation failed/validated for: ...`), så terminalen hvor
@@ -461,6 +512,9 @@ separat app:
    consent-teksterne. Gem. Denne fulde scope-streng
    (`api://<downstream-api-client-id>/access_as_user`) er værdien til
    `EntraId:CustomApiScope` på **MCP-serveren**.
+4. Åbn **Manifest**, og sæt `requestedAccessTokenVersion` til `2`. Det er
+  downstream-API'ets app-registration (resource-appen), der bestemmer
+  tokenversionen, også når MCP-serverens OBO-kald bruger `/v2.0`-endpointet.
 
 **Trin 2 - Giv MCP-serverens app-registrering adgang til `DownstreamSampleApi`**
 
@@ -483,6 +537,10 @@ dotnet user-secrets set "EntraId:TenantId" "<din-tenant-id>"
 dotnet user-secrets set "EntraId:Audience" "api://<downstream-api-client-id>"
 dotnet run
 ```
+
+Som for MCP-serveren udledes v2-tokenets GUID-audience automatisk fra denne
+standard-URI. Ved en custom Application ID URI sættes også
+`EntraId:TokenAudience` til downstream API-appens client-ID.
 
 Den lytter som standard på `https://localhost:7128` (se
 `Properties/launchSettings.json`).

@@ -127,11 +127,10 @@ class Program
             // OpenID Connect discovery document at {authority}/.well-known/openid-configuration,
             // which JwtBearer uses automatically to fetch signing keys, issuer, etc.
             options.Authority = authority;
-            options.Audience = entraId.Audience;
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidIssuer = authority,
-                ValidAudience = entraId.Audience, // RFC 8707 resource/audience binding
+                ValidAudience = entraId.ValidTokenAudience,
                 NameClaimType = "name",
                 RoleClaimType = "roles",
             };
@@ -139,7 +138,16 @@ class Program
             {
                 OnAuthenticationFailed = context =>
                 {
-                    Console.Error.WriteLine($"Entra ID token validation failed: {context.Exception.Message}");
+                    if (context.Exception is SecurityTokenInvalidAudienceException audienceException)
+                    {
+                        Console.Error.WriteLine(
+                            $"Entra ID token audience '{audienceException.InvalidAudience}' did not match " +
+                            $"expected audience '{entraId.ValidTokenAudience}'.");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"Entra ID token validation failed: {context.Exception.Message}");
+                    }
                     return Task.CompletedTask;
                 },
                 OnTokenValidated = context =>
@@ -164,7 +172,7 @@ class Program
             {
                 Resource = mcpServerUrl,
                 AuthorizationServers = { authority },
-                ScopesSupported = [entraId.Scope],
+                ScopesSupported = [entraId.McpScope],
             };
         });
 
