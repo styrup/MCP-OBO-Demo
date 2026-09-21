@@ -17,3 +17,6 @@ out/
 ## OS files
 .DS_Store
 Thumbs.db
+
+## Docker Compose secrets (see .env.example for a template)
+.env

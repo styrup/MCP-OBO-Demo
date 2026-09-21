@@ -5,6 +5,9 @@ services:
       dockerfile: Dockerfile
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - EntraId__TenantId=${DOWNSTREAM__ENTRAID__TENANTID}
+      - EntraId__Audience=${DOWNSTREAM__ENTRAID__AUDIENCE}
+      - EntraId__TokenAudience=${DOWNSTREAM__ENTRAID__TOKENAUDIENCE}
 
   mcpdummyserver:
     build:
@@ -18,5 +21,13 @@ services:
       # instead of the localhost URL used for local (non-container) development.
       - EntraId__CustomApiBaseUrl=http://downstreamapi:8080/
       - Mcp__ServerUrl=http://localhost:5001/mcp
+      - EntraId__TenantId=${ENTRAID__TENANTID}
+      - EntraId__Audience=${ENTRAID__AUDIENCE}
+      - EntraId__TokenAudience=${ENTRAID__TOKENAUDIENCE}
+      - EntraId__Scope=${ENTRAID__SCOPE}
+      - EntraId__ClientId=${ENTRAID__CLIENTID}
+      - EntraId__ClientSecret=${ENTRAID__CLIENTSECRET}
+      - EntraId__DownstreamScope=${ENTRAID__DOWNSTREAMSCOPE}
+      - EntraId__CustomApiScope=${ENTRAID__CUSTOMAPISCOPE}
     depends_on:
       - downstreamapi
