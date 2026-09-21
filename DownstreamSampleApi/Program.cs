@@ -1,5 +1,6 @@
 using DownstreamSampleApi;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using System.Security.Claims;
 
@@ -16,11 +17,10 @@ if (entraId.IsConfigured)
         .AddJwtBearer(options =>
         {
             options.Authority = authority;
-            options.Audience = entraId.Audience;
             options.TokenValidationParameters = new TokenValidationParameters
             {
                 ValidIssuer = authority,
-                ValidAudience = entraId.Audience,
+                ValidAudience = entraId.ValidTokenAudience,
                 NameClaimType = "name",
                 RoleClaimType = "roles",
             };
@@ -28,7 +28,19 @@ if (entraId.IsConfigured)
             {
                 OnAuthenticationFailed = context =>
                 {
-                    Console.Error.WriteLine($"DownstreamSampleApi: token validation failed: {context.Exception.Message}");
+                    if (context.Exception is SecurityTokenInvalidAudienceException audienceException)
+                    {
+                        var token = new JsonWebToken(context.Request.Headers.Authorization.ToString()["Bearer ".Length..]);
+                        Console.Error.WriteLine(
+                            $"DownstreamSampleApi: token ver='{token.GetClaim("ver")?.Value ?? "(missing)"}', " +
+                            $"aud='{string.Join(", ", token.Audiences)}', iss='{token.Issuer}' did not match " +
+                            $"expected v2 audience '{entraId.ValidTokenAudience}'.");
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine(
+                            $"DownstreamSampleApi: token validation failed: {context.Exception.Message}");
+                    }
                     return Task.CompletedTask;
                 },
                 OnTokenValidated = context =>

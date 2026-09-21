@@ -1,0 +1,12 @@
+{
+	"servers": {
+		"obo-server": {
+			"url": "http://localhost:5000/mcp",
+			"type": "http",
+			"oauth": {
+				"clientId": "c35017cb-2737-479f-8c96-8561ae436fde"
+			}
+		}
+	},
+	"inputs": []
+}

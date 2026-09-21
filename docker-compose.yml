@@ -1,0 +1,22 @@
+services:
+  downstreamapi:
+    build:
+      context: ./DownstreamSampleApi
+      dockerfile: Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+
+  mcpdummyserver:
+    build:
+      context: ./McpDummyServer
+      dockerfile: Dockerfile
+    ports:
+      - "5001:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      # Points the OBO custom-API tool at the downstream service's in-network address
+      # instead of the localhost URL used for local (non-container) development.
+      - EntraId__CustomApiBaseUrl=http://downstreamapi:8080/
+      - Mcp__ServerUrl=http://localhost:5001/mcp
+    depends_on:
+      - downstreamapi
